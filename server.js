@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const fetch = require("node-fetch"); // npm install node-fetch@2
+const fetch = require("node-fetch"); // নিশ্চিত করুন package.json-এ node-fetch@2 আছে
 
 const app = express();
 app.use(express.json());
@@ -12,28 +12,37 @@ const {
     GEMINI_API_KEY, GROQ_API_KEY, APPS_SCRIPT_URL 
 } = process.env;
 
-// --- ১. লোকাল ডাটা প্রসেসর (In-Memory) ---
+// --- ১. লোকাল ডাটা লোডিং (Grating.json ব্যবহার করে) ---
 let localContext = "";
 let contactData = [];
 
-function loadData() {
+function loadLocalFiles() {
     try {
-        const cPath = path.join(__dirname, "ContactData.json");
-        const tPath = path.join(__dirname, "Contact.json");
+        // Contact Data লোড করা
+        const contactPath = path.join(__dirname, "ContactData.json");
+        if (fs.existsSync(contactPath)) {
+            contactData = JSON.parse(fs.readFileSync(contactPath, "utf8"));
+        }
 
-        if (fs.existsSync(cPath)) contactData = JSON.parse(fs.readFileSync(cPath, "utf8"));
-        if (fs.existsSync(tPath)) localContext = fs.readFileSync(tPath, "utf8");
-        
-        console.log("✅ Local Intelligence Loaded.");
-    } catch (e) { console.log("⚠️ File loading error."); }
+        // Grating.json লোড করা (আপনার Context হিসেবে)
+        const gratingPath = path.join(__dirname, "Grating.json");
+        if (fs.existsSync(gratingPath)) {
+            const gratingData = JSON.parse(fs.readFileSync(gratingPath, "utf8"));
+            // JSON অবজেক্টকে টেক্সট ফরম্যাটে রূপান্তর করে এআই-এর জন্য রেডি করা
+            localContext = JSON.stringify(gratingData);
+            console.log("✅ Grating.json loaded as Local Intelligence.");
+        }
+    } catch (e) {
+        console.log("⚠️ File loading error:", e.message);
+    }
 }
-loadData();
+loadLocalFiles();
 
-// --- ২. লোকাল লাইটওয়েট এআই লজিক (The Brain) ---
+// --- ২. লোকাল লাইটওয়েট এআই ইঞ্জিন ---
 function runLocalAI(msg) {
     const q = msg.toLowerCase();
-
-    // ক. ডাটা প্রসেসিং: কন্টাক্ট লিস্ট থেকে শহর বা অফিস খুঁজে বের করা
+    
+    // শাখা বা অফিসের তথ্য খোঁজা (ContactData.json থেকে)
     const office = contactData.find(c => 
         q.includes(c.city?.toLowerCase()) || q.includes(c.name?.toLowerCase())
     );
@@ -41,24 +50,16 @@ function runLocalAI(msg) {
         return `📍 শাখা: ${office.name}\nঠিকানা: ${office.address}\nফোন: ${office.phone1}\nইমেইল: ${office.email}`;
     }
 
-    // খ. ম্যাথমেটিক্যাল ক্যালকুলেশন (Math Logic)
-    if (/[0-9]/.test(q) && (q.includes("+") || q.includes("-") || q.includes("*") || q.includes("/"))) {
-        try {
-            const result = eval(q.replace(/[^-()\d/*+.]/g, ''));
-            return `আপনার হিসাবের ফলাফল: ${result}`;
-        } catch (e) { return null; }
-    }
-
-    // গ. কমন গ্রিটিংস (Static Responses)
-    if (q === "hi" || q === "hello") return "আসসালামু আলাইকুম! আমি কোয়ান্টাম মেথড অ্যাসিস্ট্যান্ট। আপনাকে কীভাবে সাহায্য করতে পারি?";
-    if (q.includes("সময়") || q.includes("সময়")) return `এখন সময়: ${new Date().toLocaleTimeString('bn-BD')}`;
-
-    return null; // লোকাল লজিক না মিললে ক্লাউড এআই-তে যাবে
+    // সাধারণ গ্রিটিংস চেক
+    if (q === "hi" || q === "hello") return "আসসালামু আলাইকুম! আপনাকে কীভাবে সাহায্য করতে পারি?";
+    
+    return null;
 }
 
-// --- ৩. ক্লাউড এআই চেইন (Gemini + Groq All Models) ---
+// --- ৩. ক্লাউড এআই ইঞ্জিন (Gemini + Groq All Models) ---
 async function getCloudAIResponse(userMsg) {
-    const systemPrompt = `Context: ${localContext}\nInstruction: You are a Quantum Method Assistant. Answer in Bengali briefly.\nUser: ${userMsg}`;
+    // Grating.json থেকে পাওয়া তথ্য এআই-কে কনটেক্সট হিসেবে দেওয়া হচ্ছে
+    const systemPrompt = `Context from Grating.json: ${localContext}\nInstruction: You are a Quantum Method Assistant. Answer briefly in Bengali.\nUser: ${userMsg}`;
 
     const models = [
         { id: "gemini-3.1-flash-lite-preview", provider: "gemini" },
@@ -88,12 +89,14 @@ async function getCloudAIResponse(userMsg) {
                 text = data.choices?.[0]?.message?.content;
             }
             if (text) return text;
-        } catch (e) { console.error(`${m.id} switching...`); }
+        } catch (e) {
+            console.error(`${m.id} failed, trying next...`);
+        }
     }
-    return "দুঃখিত, বর্তমানে সবগুলো এআই সার্ভার ব্যস্ত।";
+    return "দুঃখিত, এআই সার্ভার বর্তমানে ব্যস্ত।";
 }
 
-// --- ৪. মেসেঞ্জার হ্যান্ডলার (High-Concurrency Ready) ---
+// --- ৪. মেসেঞ্জার ওয়েবহুক ---
 app.post("/webhook", (req, res) => {
     res.status(200).send("EVENT_RECEIVED");
 
@@ -103,42 +106,40 @@ app.post("/webhook", (req, res) => {
     const senderId = event.sender.id;
     const userMsg = event.message.text;
 
-    // ব্যাকগ্রাউন্ডে এসিংক্রোনাস প্রসেসিং
     (async () => {
         try {
             await sendAction(senderId, "typing_on");
 
-            // ১. লোকাল এআই দিয়ে প্রসেস করা (Instant)
             let reply = runLocalAI(userMsg);
 
-            // ২. ডাটা সেভ লজিক (গুগল শিট)
+            // ডাটা সেভ লজিক
             if (!reply && userMsg.toLowerCase().startsWith("save:")) {
-                const parts = userMsg.replace("save:", "").split(",");
-                const [name, phone, email, prob, time] = parts.map(s => s?.trim());
-
-                if (name && phone) {
+                const p = userMsg.replace("save:", "").split(",").map(s => s.trim());
+                if (p[0] && p[1]) {
                     await fetch(APPS_SCRIPT_URL, { 
                         method: "POST", 
-                        body: JSON.stringify({ action: "saveUser", name, phone, email, message: prob, commTime: time }) 
+                        body: JSON.stringify({ action: "saveUser", name: p[0], phone: p[1], email: p[2] || "", message: p[3] || "", commTime: p[4] || "" }) 
                     });
-                    reply = `✅ ধন্যবাদ ${name}! তথ্য সেভ হয়েছে। সামারি:\nনাম: ${name}\nফোন: ${phone}\nসময়: ${time || 'শীঘ্রই'}`;
+                    reply = `✅ ধন্যবাদ ${p[0]}! তথ্য সেভ করা হয়েছে।`;
                 } else {
-                    reply = "⚠️ নাম এবং ফোন নম্বর বাধ্যতামূলক। ফরম্যাট: save: নাম, ফোন, ইমেইল, সমস্যা, সময়";
+                    reply = "⚠️ ফরম্যাট: save: নাম, ফোন, ইমেইল, সমস্যা, সময়";
                 }
             }
 
-            // ৩. যদি লোকাল লজিকে উত্তর না পাওয়া যায় তবে ক্লাউড এআই
+            // ক্লাউড এআই কল
             if (!reply) {
                 reply = await getCloudAIResponse(userMsg);
             }
 
             await sendFBMessage(senderId, reply);
             await sendAction(senderId, "typing_off");
-        } catch (e) { console.error("Error:", e); }
+        } catch (e) {
+            console.error("Error processing message:", e);
+        }
     })();
 });
 
-// --- ৫. হেল্পার ফাংশনস ---
+// --- ৫. ফেসবুক এপিআই ফাংশনস ---
 async function sendFBMessage(id, text) {
     return fetch(`https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
         method: "POST",

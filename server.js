@@ -13,7 +13,7 @@ const { GEMINI_API_KEY, PAGE_ACCESS_TOKEN, VERIFY_TOKEN, APPS_SCRIPT_URL } = pro
 const officeBN = JSON.parse(fs.readFileSync(path.join(__dirname, "ContactData.json"), "utf8"));
 const officeEN = JSON.parse(fs.readFileSync(path.join(__dirname, "ContactData_English.json"), "utf8"));
 
-// ইউজারের স্টেট রাখার জন্য (১০০০+ ইউজারের জন্য ইন-মেমোরি অবজেক্ট)
+
 const userSessions = {}; 
 
 async function sendFB(id, text) {

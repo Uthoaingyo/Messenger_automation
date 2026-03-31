@@ -72,7 +72,8 @@ async function askAI(userMsg) {
     User: ${userMsg}`;
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/Gemini 2.0 Flash-Lite:generateContent?key=${GEMINI_API_KEY}`;
+        // Gemini 2.0 Flash ব্যবহার করতে চাইলে
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
         const res = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] }, { timeout: 10000 });
         
         const rawText = res.data.candidates[0].content.parts[0].text;
